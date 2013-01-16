@@ -1,0 +1,351 @@
+===================================================
+These are some of the questions asked about PyCLIPS
+===================================================
+
+
+
+Q: How can I track what constructs or commands are sent to CLIPS?
+
+A: There is actually no way to inspect the "history" of commands that
+have been sent to the underlying CLIPS engine. In fact, unlike similar
+projects, PyCLIPS does not limit its interaction with CLIPS to sending
+commands to the engine. What PyCLIPS mostly does is to call the intrinsic
+low-level CLIPS API to access and modify the engine state. However the
+underlying engine keeps its ability to produce a possibly (even too
+densely) detailed trace file. See the documentation for the DebugConfig
+object in the manual in order to learn how to produce a trace file with
+the desired detail, and the CLIPS manual if you are uncertain about what
+entities or actions can be "watched" and for what purpose.
+
+
+
+Q: How can I verify when a CLIPS subprogram has finished running?
+
+A: When the Run() function is invoked without arguments, it just
+returns control to the calling Python program when it has finished
+running. In most cases this is sufficient, but sometimes it might be
+useful to divide execution in steps, eg. when the CLIPS subprogram
+is known to take a long time to finish and there is the need to give
+some feedback to the user. In this case you can just decide to perform
+a certain number of steps repeatedly until no rules are fired anymore,
+as the Run command accepts a "limit" integer argument which must be the
+maximum number of rules to execute. An example follows:
+
+    STEPS = 5
+    import clips
+    define_some_rules()
+    clips.Reset()
+    assert_some_facts()
+    while not clips.Run(STEPS) < STEPS:
+        give_some_feedback()
+        possibly_consider_activations()
+    print_result()
+
+Run() returns the number of fired rules, so it eventually becomes less
+than expected (zero if no rules are fired anymore) and this means that
+the CLIPS subprogram has finished. At any step the calling program can
+take into consideration the newly activated rules, giving also more
+granularity to the process.
+
+
+
+Q: How can salience be declared using the BuildRule() function?
+
+A: Salience declaration is part of the LHS of the rule, so it is legal to
+declare salience in the LHS. The implementation of BuildRule() relies on
+the more general Build() function: the construct is converted to a string
+and then sent to the CLIPS engine via the same low-level call that Build()
+invokes, while immediately looking up for the newly created rule and
+returning it as an object. Unfortunately there is currently no way to
+set the salience of a rule after building it (eg. as a property of the
+returned Rule object). An example follows:
+
+    r = clips.BuildRule("duck-rule",
+        """(declare (salience 99))
+           (duck)
+        """, "(assert (quack))")
+
+Of course PyCLIPS does not rely on multi-line strings and spacing, as its
+main delimiter is the bracket. The above example uses multiple lines only
+for sake of readability.
+
+
+
+Q: How do I access Activation objects?
+
+A: There is actually no ready-made Activation list. The documentation
+states that Activation objects cannot be created by the user, and can
+only be retrieved from the system. In fact it would make no sense to
+create an Activation object, as it occurs only when, before (or
+within) a Run(), a certain rule is likely to be fired. Also, being
+Activations mainly a sort of "temporary" objects, they have no name...
+hence the absence of a "list of activations" (the <Entity>List()
+functions, with few exceptions, just provide lists of *names*).
+However, the possibility to walk through the list of current
+activations is provided by the "iteration functions":
+
+InitialActivation() (returns the first activation as an *object*)
+Activation.Next() (returns the activation that follows as an object).
+
+
+
+Q: How do I specifically see errors that happen in the CLIPS engine?
+
+A: There are several ways, actually. One can be directly reading what
+the engine reports on TraceStream and ErrorStream, by explicitly using
+their Read() method. The easiest way I have found (it's time consuming,
+though) is to clips.DebugConfig.WatchAll() to activate all trace
+output and clips.DebugConfig.DribbleOn("my_trace.log"). When an error
+occurs in CLIPS, everything about it will be written to the file
+specified in DebugConfig.DribbleOn(), and it becomes easier to spot
+it correctly.
+
+
+
+Q: Why does PyCLIPS function Xxx differ from CLIPS statement xxx?
+
+A: It might be a bug, of course. But sometimes such differences depend
+on the implementation of PyCLIPS as a layer between Python and the API
+that CLIPS exposes to the C language. PyCLIPS does not necessarily
+behave like the CLIPS shell itself, however it's possible to directly
+interact with the underlying CLIPS engine in a very similar way using
+the SendCommand() function. There is a limitation for SendCommand(),
+though: it only examines the first part of the command, that is either
+the first symbol or the first expression enclosed in the outermost
+brackets. This means that issuing a command like:
+
+    clips.SendCommand("(assert (spam)) and egg")
+
+will only send the command "(assert (spam))" to CLIPS, and forget the
+rest. But SendCommand() closely mimics the behaviour of the CLIPS
+shell, and if you try to supply the same command to CLIPS, you will
+notice exactly the same reaction.
+
+
+
+Q: Can I use PyCLIPS as a CLIPS shell?
+
+A: The module has not been created for this task. However, there are all
+the commands and utility functions (namely SendCommand and I/O "streams")
+to allow creating a simple shell. Probably I will post the script I use
+as a CLIPS shell from within the Python interactive interpreter. Anyway
+it should be quite easy to create a small script that, in an "endless"
+loop, does something like:
+
+    while True:
+        s = read_user_input()
+        clips.SendCommand(s)
+        o = clips.StdoutStream.Read()
+        e = clips.ErrorStream.Read()
+        sys.stdout.write(o)
+        sys.stderr.write(e)
+
+possibly enhancing it to read more information from other streams and to
+perform some more tests on user input.
+
+
+
+Q: Are PyCLIPS functions blocking?
+
+A: Yes, definitely. The underlying CLIPS engine has to be treated as a
+single resource - although it can handle multiple separate environments -
+thus "real" concurrent access is not possible. Multiple threads can use
+the resource, but they are implicitly blocked by the Python interpreter
+itself when they try to access the PyCLIPS low-level layer. As a side
+effect, also the Run() function could cause a Python program to release
+control to the interpreter after a long time. It wouldn't be safe to
+reimplement PyCLIPS in a way that allows the Python interpreter to access
+the engine while a time-consuming function (such as the Run() function)
+is executing, as CLIPS has not been designed for multithreading. However
+if your problem is the lack of responsiveness specifically during a Run()
+you can refer to the second "Answered Question" above for a *partial*
+solution.
+
+
+
+Q: The setup script complains, that it cannot find "Python.h"...
+
+A: This is very common, it happened to me too. I thought I was smart but
+forgot to install the Python development packages on my Linux machine.
+Normally these packages are named like "python-devel" or "python-dev",
+and are absolutely necessary to build Python modules and extensions. One
+possible reason can also be that you are using an embedded version of
+Python: in this case it would be better to install a standalone Python
+interpreter, same version as the embedded one, and use it to build the
+module. After doing that, you should copy the 'clips' subdirectory from
+its 'site-packages' to your embedded Python 'site-packages': this should,
+in most cases, allow you to call PyCLIPS from an embedded Python release.
+I don't know how to link PyCLIPS with Python in a custom build: probably
+it's quite easy... if anyone finds out how to do it, please give me some
+information about it.
+
+
+
+Q: Can I use PyCLIPS for interactive sessions?
+
+A: Yes, but you can't use clips.StdinStream and clips.StdoutStream in an
+effective way. Ok, if you structure your CLIPS subprogram very carefully
+and pay special attention to the execution order you might also be able
+to use the default CLIPS streams to provide input from an hypothetical
+user, but the quickest way to achieve a result is to let Python do the
+I/O job using a Python function:
+
+    def clips_raw_input(prompt):
+        return clips.String(raw_input(prompt))
+    clips.RegisterPythonFunction(clips_raw_input, "raw-input")
+
+this function will let Python interact with the user, such as in the
+following session:
+
+    >>> import clips
+    >>> def clips_raw_input(prompt):
+            return clips.String(raw_input(prompt))
+    >>> clips.RegisterPythonFunction(clips_raw_input, "raw-input")
+    >>> r1 = clips.BuildRule(
+        "name-rule",
+        "(initial-fact)",
+        """(bind ?user-name (python-call raw-input "Your Name? "))
+           (assert (user-name-is ?user-name))""")
+    >>> clips.Reset()
+    >>> clips.Run()
+    Your Name? Francesco
+    1
+    >>> clips.PrintFacts()
+    f-0     (initial-fact)
+    f-1     (user-name-is "Francesco")
+    For a total of 2 facts.
+    >>> 
+
+Of course you can use raw_input, but you can also pop up a dialog box
+or whatever else to retrieve input from the interactive session, using
+virtually all Python possibilities.
+
+
+
+Q: How is clips.Eval() different from clips.SendCommand()?
+
+A: SendCommand() is a function that has been provided to closely emulate
+a CLIPS shell environment. In fact, CLIPS does not provide this when used
+as a library, it has been coded implementing the same operations that are
+performed in the CLIPS command loop, except for the input part of course.
+This allows also to issue some commands that fail when called using the
+Eval() function. For an example, consider the following session:
+
+    >>> t = clips.BuildTemplate("car", "(slot make)(slot model)")
+    >>> f0 = t.BuildFact()
+    >>> f0.Slots['make'] = clips.Symbol('Chevy')
+    >>> f0.Slots['model'] = clips.Symbol('Prizm')
+    >>> f0.Assert()
+    >>> clips.PrintFacts()
+    f-0     (car (make Chevy) (model Prizm))
+    For a total of 1 fact.
+    >>> clips.Eval("(modify 0 (make Geo))")
+    Traceback (most recent call last):
+     File "<pyshell#20>", line 1, in -toplevel-
+       clips.Eval("(modify 0 (make Geo))")
+     File ".../_clips_wrap.py", line 3227, in Eval
+    ClipsError: C10: unable to evaluate expression
+    >>> print clips.ErrorStream.Read().strip()
+    [TMPLTFUN1] Fact-indexes can only be used by modify as a top level command.
+    >>>
+
+Whereas, if you use SendCommand(), the same expression actually becomes a
+top level command, and it is executed in the expected way:
+
+    >>> clips.SendCommand("(modify 0 (make Geo))")
+    >>> clips.PrintFacts()
+    f-1     (car (make Geo) (model Prizm))
+    For a total of 1 fact.
+    >>>
+
+There are other actions that behave differently when "evaluated" compared
+to when executed at the CLIPS shell prompt or within a Load() call: the
+SendCommand() function can also be used as a shortcut in these cases.
+
+
+
+Q: How can I return a boolean value from Python to CLIPS?
+
+A: Some users have noticed that, while many "basic" types (mostly numbers
+and strings) are automatically converted to their CLIPS counterpart when
+calling an external Python function, the 'bool' type is not. There is a
+reason for this behaviour, that is the absence of a real boolean type in
+the base classes of CLIPS. CLIPS uses the "special" SYMBOLs 'TRUE' and
+FALSE as if they were booleans, but they remain SYMBOLs.
+
+The issue is partially covered by letting the value clips.Symbol('FALSE')
+to actually evaluate to a False boolean. In this way, whenever a CLIPS
+function called from Python returns that particular SYMBOL, it is seen
+as False only in tests, while not loosing its SYMBOL nature.
+
+However it seemed too arbitrary to convert a Python 'bool' to one of the
+two discussed SYMBOLs. In fact, the documentation states that it should
+not been taken for granted that PyCLIPS does all the conversion job, and
+that especially Python functions that return values back to CLIPS must be
+carefully written, and possibly return values wrapped in CLIPS types.
+
+For functions that return booleans, this is even more needed: Python has
+a peculiar way to treat many things as True or False, depending on their
+values: an empty string is False, a non-empty one is True, for instance.
+
+A solution to this issue could be to write a wrapper function in order to
+let test functions return the correct SYMBOL value to CLIPS:
+
+    def clips_test_wrapper(f):
+       def wf(*a, **kwa):
+               if f(*a, **kwa):
+                   return clips.Symbol("TRUE")
+               else:
+                   return clips.Symbol("FALSE")
+       wf.__name__ = f.__name__    # explanation is below
+       return wf
+
+The reason why we rewrite the __name__ attribute of the returned function
+is that in this way the function registration utility will register the
+wrapper function with the original name. An example follows:
+
+    >>> def py_true():
+           return True
+    >>> clips.RegisterPythonFunction(clips_test_wrapper(py_true))
+    >>> clips.Eval("(python-call py_true)")
+    <Symbol 'TRUE'>
+    >>>
+
+To unregister the function we only need to supply either the name of the
+function as it is known to CLIPS or any function whose __name__ attribute
+corresponds to this, such as the wrapped function or the original one.
+
+
+
+Q: Is there a way to find a fact given its index?
+
+A: There is not a direct way, but you can traverse the list of existing
+facts to come up to the one that has the required index. The following
+is an example of function that uses this technique:
+
+    def FindFactByIndex(idx):
+        f = clips.InitialFact()
+        while f is not None and f.Index != idx:
+            f = f.Next()
+        return f
+
+This can easily be implemented in an environment-aware way. Of course
+the given implementation has a linear cost with respect to the total
+number of facts (which could be unknown, and significantly big), but
+at the moment and with the current CLIPS API, there is no other way to
+achieve the same goal more efficiently.
+
+
+
+Q: Can I use Python objects as data within the CLIPS engine?
+
+A: Not for now. There are other ways to deal with this: for instance
+you can create a dictionary containing the objects you'd like to be
+managed by the CLIPS subsystem mapped to strings, and then use the
+strings to reference the objects. It's not unlikely that there will be
+the possibility to use generic Python objects directly in one of the
+next releases.
+
+
+
+$Id: FAQ 335 2008-01-13 01:50:50Z Franz $
