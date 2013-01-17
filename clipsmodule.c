@@ -739,6 +739,12 @@ typedef struct {
         clips_fact_value(e) = p; \
     } while(0)
 
+/* Move a pointer to a CLIPS fact without incrementing the reference count.
+   Same as clips_fact_assign(), except ownership is being transfered. */
+#define clips_fact_move(e, p) do { \
+        clips_fact_value(e) = p; \
+    } while(0)
+
 /* lock/unlock a fact object */
 #define clips_fact_locked(v) (((clips_FactObject *)(v))->locked)
 #define clips_fact_lock(v) do { \
@@ -1604,6 +1610,7 @@ PyObject *i_do2py_e(void *env, DATA_OBJECT *o) {
             PyList_SET_ITEM(q, i, p1);
         }
         p = Py_BuildValue("(iO)", t, q);
+        Py_DECREF(q);
         break;
     case INSTANCE_ADDRESS:
         ptr = DOPToPointer(o);
@@ -2989,7 +2996,7 @@ static PyObject *g_assertFact(PyObject *self, PyObject *args) {
         FAIL();
     }
     clips_fact_readonly(q) = TRUE;
-    clips_fact_assign(q, ptr);
+    clips_fact_move(q, ptr);
     clips_fact_lock(q);
     CHECK_VALID_FACT(q);
     RETURN_PYOBJECT(q);
@@ -3028,7 +3035,7 @@ static PyObject *g_assertString(PyObject *self, PyObject *args) {
         FAIL();
     }
     clips_fact_readonly(p) = TRUE;
-    clips_fact_assign(p, ptr);
+    clips_fact_move(p, ptr);
     clips_fact_lock(p);
     CHECK_VALID_FACT(p);
     RETURN_PYOBJECT(p);
