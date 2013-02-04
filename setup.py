@@ -36,8 +36,8 @@ print "Setup revision: %s" % __revision__
 #  whether or not to replace an existing package
 PYCLIPS_MAJOR = 1
 PYCLIPS_MINOR = 0
-PYCLIPS_PATCHLEVEL = 7
-PYCLIPS_INCREMENTAL = 348
+PYCLIPS_PATCHLEVEL = 8
+PYCLIPS_INCREMENTAL = 0
 PYCLIPS_VERSION = "%s.%s.%s.%s" % (
     PYCLIPS_MAJOR,
     PYCLIPS_MINOR,
