@@ -1,0 +1,6 @@
+*.py[co]
+/build/
+/clipssrc/
+CLIPSSrc.zip
+clips/_eclips_wrap.py
+clips/_version.py
